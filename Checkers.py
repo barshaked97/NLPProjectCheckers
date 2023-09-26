@@ -24,14 +24,17 @@ from copy import deepcopy
 from tabulate import tabulate
 import time
 
+pos_dict = {(1,2):1, (1,4):2, (1,6):3, (1,8):4, (2,1):5, (2,3):6, (2,5):7, (2,7):8, (3,2):9, (3,4):10, (3,6):11, (3,8):12,(4,1):13, (4,3):14, (4,5):15, (4,7):16,
+            (5,2):17, (5,4):18, (5,6):19, (5, 8):20, (6,1):21, (6,3):22, (6,5):23, (6,7):24, (7,2):25, (7,4):26, (7,6):27, (7,8):28, (8,1):29, (8,3):30, (8,5):31, (8,7):32}
 
+reverse_pos_dict = {v:k for k,v in pos_dict.items()}
 class Checkers:
     """Class to represent a game of Checkers."""
     def __init__(self, neural_net=None):
         """Initialize the class with the pieces in their starting positions.  
         Get a list of valid (legal) next moves.  Moves are not explicitly 
         represented; instead possible next states of the game board are 
-        generated.  The player's move is implied by selecting one of these 
+        generated.  The player's move is implied by selecting one of these
         possible next states.
         
         The game state is a 3 dimensional NumPy array of 15 8x8 arrays.
@@ -59,14 +62,14 @@ class Checkers:
         self.player2_king = u'\u01D1'
         self.neural_net = neural_net
         
-    def step(self, next_state):
+    def step(self, next_state, last_dest):
         """Execute the player's (legal) move.  Check to see if the game
         has ended, and update the list of legal next moves.
         """
         if any((next_state[:5] == x[:5]).all() for x in self.legal_next_states):
             self.state = next_state
             self.history.append(self.state)
-            self.legal_next_states = self._check_moves(self.history)
+            self.legal_next_states = self._check_moves(self.history, last_dest)
             self.done, self.outcome = self.determine_outcome(self.history,
                                          legal_moves=self.legal_next_states)
             self.move_count += 1
@@ -85,13 +88,13 @@ class Checkers:
         here first and then passing them as an optional argument to 
         determine_outcome().
         """
-        legal_next_states = self._check_moves(history)
+        legal_next_states = self._check_moves(history, (9,9))
         done, outcome = self.determine_outcome(history, 
                                                legal_moves=legal_next_states)
         if done == True: return [] # Game over
         return legal_next_states
     
-    def _check_moves(self, history):
+    def _check_moves(self, history, last_dest):
         """Method intended for internal use.  Creates a list of the locations 
         of all of the pieces on the board divided up into four categories (P1's 
         men, P1's kings, P2's men, and P2's kings).
@@ -106,6 +109,8 @@ class Checkers:
         The function also determines if an ordinary move results in a man 
         reaching King's Row, and kings the man if so.
         """
+        jump_moves_from_last = []
+
         state = history[-1]
         player = int(state[4,0,0])
         xman1, yman1 = np.where(state[0] == 1) # Locations of P1's men
@@ -163,6 +168,8 @@ class Checkers:
                             6, x, y
                     legal_moves.append(temp_state)
             # Check to see if man can jump any of opponent's pieces
+            if (x+1,y+1) == last_dest:
+                jump_moves_from_last.extend(self._check_jumps(x,y,fwd,state,idx,opp_idx,board,player))
             jump_moves.extend(self._check_jumps(x,y,fwd,state,idx,opp_idx,board,player))
         # Get legal moves including jumps for kings
         for x, y in piece_locs[idx+1]: # Kings
@@ -193,10 +200,15 @@ class Checkers:
                                     6, x, y
                             legal_moves.append(temp_state)
             # Check to see if king can jump any of opponent's pieces
+            if (x+1,y+1) == last_dest:
+                jump_moves_from_last.extend(self._check_king_jumps(x,y,state,idx,opp_idx,board,player))
             jump_moves.extend(self._check_king_jumps(x,y,state,idx,opp_idx,board,player))
-        if jump_moves: 
+        if jump_moves:
             state[6:10] = 0 # Clear all possible non-jump moves
-            return jump_moves # Jumps are mandatory    
+            if jump_moves_from_last:
+                return jump_moves_from_last
+            else:
+                return jump_moves # Jumps are mandatory
         return legal_moves
             
     def _check_jumps(self,x,y,fwd,state,idx,opp_idx,board,player):
@@ -327,7 +339,7 @@ class Checkers:
         current_player = int(state[4,0,0])
         last_player_to_move = 1 - current_player
         if not legal_moves:
-            legal_moves = self._check_moves(history) # Can player make a move?
+            legal_moves = self._check_moves(history, (9,9)) # Can player make a move?
         man_moved, piece_jumped = True, True # Default if <80 moves played
         if len(history) >= 80:
             man_moved = False # Draw condition #1
@@ -439,7 +451,7 @@ class Checkers:
 
     def set_prior_probs(self, child_nodes, prob_planes):
         """Takes as input a list of the parent node's child nodes, and the
-        probability vector generated by running the parent's state through the
+        probability vector generated.txt by running the parent's state through the
         neural network.  Assigns each child node its corresponding prior
         probability as predicted by the neural network.
         """
@@ -450,6 +462,131 @@ class Checkers:
             if x % 2 == y % 2: raise ValueError('Invalid (x,y) locations for probabilities!')
             if not (0 <= layer <= 7): raise ValueError('Invalid layer for probabilities!')
             child._prior_prob = prob_planes[layer, x, y]
+
+    def words_list_to_move(self, words):
+        if words[0] == 'K':
+            words = words[1:]
+        l = []
+        for word in words:
+            if word in [str(i) for i in reverse_pos_dict.keys()]:
+                l.append(reverse_pos_dict[int(word)])
+        return l
+
+    # 2-4
+
+    def states_to_piece_positions(self, next_states):
+        """Given a list of next states, produce a list of two coordinates for each
+        possible next state.  The first coordinate will be the location of the
+        piece that was moved, and the second coordinate will be the location that
+        the piece moved to.
+        """
+        moves_list = []
+        state = self.state
+        board = state[0] + 2 * state[1] + 3 * state[2] + 4 * state[3]
+        for nstate in next_states:
+            nboard = nstate[0] + 2 * nstate[1] + 3 * nstate[2] + 4 * nstate[3]
+            board_diff = board - nboard
+            xnew, ynew = np.where(board_diff < 0)
+            xnew, ynew = xnew[0], ynew[0]
+            new_val = abs(nboard[xnew, ynew])
+            xold, yold = np.where(board_diff == new_val)
+            try:
+                xold, yold = xold[0], yold[0]
+            except IndexError:  # Man promoted to king
+                new_val -= 1  # Value of man is 1 less than king
+                xold, yold = np.where(board_diff == new_val)
+                xold, yold = xold[0], yold[0]
+            moves_list.append([(xold + 1, yold + 1), (xnew + 1, ynew + 1)])
+        return moves_list
+    def check_legal_move(self, move):
+        # moves_str = ""
+        # moves_str_without_K = ""
+        last = -18
+        equals = False
+
+        l = self.words_list_to_move(move)
+        # l = (l[0], l[1])
+        # _, m, eat, done = get_random_input()
+        legal_next_states = self.legal_next_states
+        moves_list = self.states_to_piece_positions(legal_next_states)
+        player_before = int(self.state[4, 0, 0])
+        if l in moves_list:
+            id = moves_list.index(l)
+            a, b, done = self.step(legal_next_states[id], (9,9))
+            player_after = int(self.state[4, 0, 0])
+            if abs(l[0][0] - l[1][0]) == 2:
+                # eat = True
+                if move[-2] == 'x':
+                    return True, player_before != player_after
+                else:
+                    return False, False
+            else:
+                # eat = False
+                if move[-2] == '-':
+                    return True, player_before != player_after
+                else:
+                    return False, False
+        else:
+            return False, False
+
+    def umpire(self, move):
+        while len(move) > 1:
+            partial_move = move[:4] if move[0] == "K" else move[:3]
+            _, _ = self.check_legal_move(partial_move)
+            move = move[3:] if move[0] == "K" else move[2:]
+
+    def get_state(self):
+        white_uncrowned = self.state[2]
+        white_kings = self.state[3]
+        black_uncrowned = self.state[0]
+        black_kings = self.state[1]
+        empty_squares = np.ones((8,8)) - white_uncrowned - white_kings - black_uncrowned - black_kings
+        state = 0*white_uncrowned + 1*white_kings + 2*black_uncrowned + 3*black_kings + 4*empty_squares
+        state = state.flatten()
+        state = state[[True if (c//8+1, c%8+1) in pos_dict.keys() else False for c in range(64)]]
+        return state.tolist()
+
+    def get_gt(self, moves, func, prt=False):
+        # takes a new move or new moves and update state
+        container = []
+        if prt:
+            self.__print__()
+        # for _, move in enumerate(moves):
+        #     self.umpire(move)
+        #     container.append(getattr(self, func)())
+        while len(moves) > 0:
+            partial_move = moves[:3] if moves[0] == "K" else moves[:2]
+            if not ((len(partial_move) == 3 and partial_move[0] == "K") or (len(partial_move) == 2 and partial_move[0] != "K")):
+                for _ in range(len(partial_move)):
+                    container.append(getattr(self, func)())
+                break
+            # while len(container) < len(moves):
+            #     container.append(getattr(self, func)())
+            # break
+            _, swap = self.check_legal_move(partial_move)
+            # self.print_board()
+            if swap:
+                if moves[0] == "K":
+                    moves = moves[3:]
+                    for _ in range(3):
+                        container.append(getattr(self, func)())
+                else:
+                    moves = moves[2:]
+                    for _ in range(2):
+                        container.append(getattr(self, func)())
+            else:
+                if moves[0] == "K":
+                    moves = moves[2:]
+                    for _ in range(2):
+                        container.append(getattr(self, func)())
+                else:
+                    moves = moves[1:]
+                    container.append(getattr(self, func)())
+            # container.append(getattr(self, func)())
+            # to predict first y, we need already know the first x
+            if prt:
+                self.__print__()
+        return container
 
 
 class Checkers_GUI:

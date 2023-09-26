@@ -201,6 +201,7 @@ def translate_move(m):
 
 def generate_game(game_env):
     moves_str = ""
+    moves_str_without_K = ""
     last = -18
     equals = False
 
@@ -218,15 +219,20 @@ def generate_game(game_env):
             if player == 0 and black_kings[m[1][0]-1,m[1][1]-1] == 1 or player == 1 and white_kings[m[1][0]-1, m[1][1]-1] == 1:
                 moves_str += 'K'
             moves_str += str(trans[0])
+            moves_str_without_K += str(trans[0])
         equals = False
         if eat:
+            moves_str_without_K += 'x'
             moves_str += 'x'
         else:
             moves_str += '-'
+            moves_str_without_K += '-'
         moves_str += str(trans[1])
+        moves_str_without_K += str(trans[1])
 
         if last != player:
             moves_str += ' '
+            moves_str_without_K += ' '
         else:
             equals = True
         last = player
@@ -234,15 +240,18 @@ def generate_game(game_env):
             break
 
     # print(moves_str)
-    with open("datasets/generated_every.txt", "a") as f:
+    with open("datasets/generated_every_test.txt", "a") as f:
         f.write(moves_str + "\n")
+
+    # with open("datasets/generated_every_no_K.txt", "a") as f:
+    #     f.write(moves_str_without_K + "\n")
 
     # with open("datasets/generated_first.txt", "a") as f:
     #     f.write(moves_str + "\n")
 
 if __name__ == "__main__":
     game_env = Checkers(neural_net=None)
-    for i in tqdm(range(1000000)):
+    for i in tqdm(range(500_000)):
         # print(i)
         game_env.reset()
         generate_game(game_env)
