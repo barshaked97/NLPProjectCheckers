@@ -4,7 +4,7 @@ import torch
 import torch.nn as nn
 from torch.nn import functional as F
 from matplotlib import pyplot as plt
-
+# import NLPProjectCheckers2.Checkers as Checkers
 # from data.othello import permit, start_hands, OthelloBoardState, permit_reverse
 
 def set_seed(seed):
@@ -52,11 +52,11 @@ def sample(model, x, steps, temperature=1.0, sample=False, top_k=None):
 def print_board(labels):
     # torch tensor, [64], in 0--2
     bs_in_probe_mind = labels -1
-    anob = OthelloBoardState()
-    anob.state = bs_in_probe_mind.detach().cpu().numpy().reshape(8, 8)
-    anob.__print__()
+    # anob = Checkers.Checkers()
+    # anob.state = bs_in_probe_mind.detach().cpu().numpy().reshape(8, 8)
+    # anob.print_board()
 
-def intervene(p, mid_act, labels_pre_intv, wtd, htd, plot=False):
+def intervene(ds, p, mid_act, labels_pre_intv, wtd, htd, plot=False):
     # p: probe model
     # mid_act: [512, ], the intervened, might not be at the lastest temporal position
     # labels_pre_intv,
@@ -69,17 +69,17 @@ def intervene(p, mid_act, labels_pre_intv, wtd, htd, plot=False):
     opt = torch.optim.Adam([new_mid_act], lr=htd["lr"])
 
     labels_post_intv = labels_pre_intv.clone()
-    weight_mask = htd["reg_strg"] * torch.ones(64).cuda()
+    weight_mask = htd["reg_strg"] * torch.ones(32).cuda()
 
-    labels_post_intv[permit(wtd["intervention_position"])] = wtd["intervention_to"]
-    weight_mask[permit(wtd["intervention_position"])] = 1
+    labels_post_intv[int(wtd["intervention_position"])-1] = wtd["intervention_to"]
+    weight_mask[int(wtd["intervention_position"])-1] = 1
 
     logit_container = []
     loss_container = []
     for i in range(htd["steps"]):
         opt.zero_grad()
         logits_running = p(new_mid_act[None, :])[0][0]  # [64, 3]
-        logit_container.append(logits_running[permit(wtd["intervention_position"])].detach().cpu().numpy())
+        logit_container.append(logits_running[int(wtd["intervention_position"])-1].detach().cpu().numpy())
         loss = F.cross_entropy(logits_running, labels_post_intv, reduction="none")
         loss = torch.mean(weight_mask * loss)
         loss.backward()  # by torch semantics, loss is to be minimized
@@ -99,9 +99,9 @@ def intervene(p, mid_act, labels_pre_intv, wtd, htd, plot=False):
             print(wtd["intervention_position"] + " Sucessfully intervened!")
         else:
             print(wtd["intervention_position"] + " Failed intervention! See the below two borads:")
-            print("labels_post_intv_reality")
-            print_board(labels_post_intv_hat)
-            print("labels_post_intv_wished")
-            print_board(labels_post_intv)
+            # print("labels_post_intv_reality")
+            # print_board(labels_post_intv_hat)
+            # print("labels_post_intv_wished")
+            # print_board(labels_post_intv)
 
     return new_mid_act

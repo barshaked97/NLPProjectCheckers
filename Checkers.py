@@ -472,7 +472,6 @@ class Checkers:
                 l.append(reverse_pos_dict[int(word)])
         return l
 
-    # 2-4
 
     def states_to_piece_positions(self, next_states):
         """Given a list of next states, produce a list of two coordinates for each
@@ -550,7 +549,7 @@ class Checkers:
         # takes a new move or new moves and update state
         container = []
         if prt:
-            self.__print__()
+            self.print_board()
         # for _, move in enumerate(moves):
         #     self.umpire(move)
         #     container.append(getattr(self, func)())
@@ -585,7 +584,7 @@ class Checkers:
             # container.append(getattr(self, func)())
             # to predict first y, we need already know the first x
             if prt:
-                self.__print__()
+                self.print_board()
         return container
 
 
